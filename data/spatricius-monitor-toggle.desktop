@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Monitor Toggle
+Comment=Tray icon for toggling monitor outputs
+Exec=spatricius-monitor-toggle
+Icon=monitor-off
+Terminal=false
+StartupNotify=false
+X-KDE-autostart-after=panel
+X-GNOME-Autostart-enabled=true

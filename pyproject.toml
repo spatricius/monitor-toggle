@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spatricius-monitor-toggle"
+version = "1.0.0"
+description = "KDE Plasma system tray app to toggle monitor outputs"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+spatricius-monitor-toggle = "spatricius_monitor_toggle.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["spatricius_monitor_toggle*"]
+
+[tool.setuptools.package-data]
+spatricius_monitor_toggle = ["icons/*.svg"]
