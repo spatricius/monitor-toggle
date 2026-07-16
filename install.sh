@@ -2,7 +2,7 @@
 set -euo pipefail
 
 echo "==> Installing Python package..."
-pip install --user .
+pip install --user --break-system-packages .
 echo "==> Package installed"
 
 INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"

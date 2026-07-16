@@ -13,6 +13,8 @@ STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
 SELECTION_FILE = STATE_DIR / "selected-outputs.json"
 CONFIG_FILE = STATE_DIR / "config.json"
 LAYOUT_FILE = STATE_DIR / "layout.json"
+XRANDR_LAYOUT_FILE = STATE_DIR / "layout-xrandr.json"
+MUTTER_LAYOUT_FILE = STATE_DIR / "layout-mutter.json"
 
 BUS_NAME = "org.kde.StatusNotifierItem.spatricius_monitor_toggle"
 OBJECT_PATH = "/StatusNotifierItem"

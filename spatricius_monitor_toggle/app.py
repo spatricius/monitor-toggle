@@ -12,7 +12,7 @@ from .constants import (
 )
 from .config import load_config, save_config, load_selected_outputs, save_selected_outputs
 from .icon import icon_pixmap_variant
-from .kscreen import (
+from .display_backend import (
     get_outputs, selected_output_infos, selected_outputs_enabled,
     toggle_outputs, auto_disable_startup,
 )
