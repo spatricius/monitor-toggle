@@ -1,3 +1,6 @@
+import subprocess
+
+
 def output_label(name, model_name, size, scale):
     label = model_name or name
     resolution = ""
@@ -29,6 +32,5 @@ def pretty_names(read_name_fn, names):
     return ", ".join(output_pretty_name(read_name_fn, n) for n in names)
 
 
-def notify(title, message):
-    import subprocess
-    subprocess.run(["notify-send", title, message], capture_output=True)
+def notify(message):
+    subprocess.run(["notify-send", "Monitor Indicator", message], capture_output=True)

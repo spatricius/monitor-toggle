@@ -9,19 +9,47 @@ def _kscreen_available():
     if not shutil.which("kscreen-doctor"):
         return False
     try:
-        subprocess.run(["kscreen-doctor", "-j"], check=True, capture_output=True, text=True)
+        subprocess.run(
+            ["kscreen-doctor", "-j"], check=True, capture_output=True, text=True, timeout=5,
+        )
         return True
-    except (subprocess.CalledProcessError, OSError):
+    except (subprocess.CalledProcessError, OSError, subprocess.TimeoutExpired):
         return False
 
 
-if _kscreen_available():
-    _backend = kscreen
-elif mutter_display_config.available():
-    _backend = mutter_display_config
-else:
-    _backend = xrandr
+def _detect_backend():
+    if _kscreen_available():
+        return kscreen
+    if mutter_display_config.available():
+        return mutter_display_config
+    return xrandr
 
-get_outputs = _backend.get_outputs
-toggle_outputs = _backend.toggle_outputs
-auto_disable_startup = _backend.auto_disable_startup
+
+_backend = _detect_backend()
+
+
+def _call(name, *args, **kwargs):
+    """Call `name` on the cached backend; if it fails, re-detect once in case
+    the right backend's service only became available after this process
+    started (e.g. a login race against kwin/muffin) and retry with that."""
+    global _backend
+    try:
+        return getattr(_backend, name)(*args, **kwargs)
+    except Exception:
+        redetected = _detect_backend()
+        if redetected is _backend:
+            raise
+        _backend = redetected
+        return getattr(_backend, name)(*args, **kwargs)
+
+
+def get_outputs():
+    return _call("get_outputs")
+
+
+def toggle_outputs(selected_outputs):
+    return _call("toggle_outputs", selected_outputs)
+
+
+def auto_disable_startup(selected_outputs):
+    return _call("auto_disable_startup", selected_outputs)

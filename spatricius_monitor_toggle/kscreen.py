@@ -4,7 +4,9 @@ from pathlib import Path
 
 from .edid import read_edid_name
 from .constants import LAYOUT_FILE
-from .outputs_common import output_label, output_short_label, selected_output_infos
+from .outputs_common import (
+    output_label, output_short_label, selected_output_infos, pretty_names, notify,
+)
 
 
 def get_outputs():
@@ -28,7 +30,7 @@ def get_outputs():
 
 
 def _pretty_names(names):
-    return ", ".join(read_edid_name(n) or n for n in names)
+    return pretty_names(read_edid_name, names)
 
 
 def toggle_outputs(selected_outputs, layout_file=LAYOUT_FILE):
@@ -40,10 +42,7 @@ def toggle_outputs(selected_outputs, layout_file=LAYOUT_FILE):
 
     missing = [o for o in selected_outputs if o not in all_outputs]
     if missing:
-        subprocess.run(
-            ["notify-send", "Monitor Indicator", f"Could not find output(s): {_pretty_names(missing)}"],
-            capture_output=True,
-        )
+        notify(f"Could not find output(s): {_pretty_names(missing)}")
         return
 
     enabled_count = sum(1 for o in layout_data["outputs"] if o.get("enabled"))
@@ -52,10 +51,7 @@ def toggle_outputs(selected_outputs, layout_file=LAYOUT_FILE):
 
     if selected_enabled_count == len(selected_outputs):
         if enabled_count - selected_enabled_count < 1:
-            subprocess.run(
-                ["notify-send", "Monitor Indicator", "Refusing to disable every active screen"],
-                capture_output=True,
-            )
+            notify("Refusing to disable every active screen")
             return
 
         Path(layout_file).parent.mkdir(parents=True, exist_ok=True)
@@ -63,10 +59,7 @@ def toggle_outputs(selected_outputs, layout_file=LAYOUT_FILE):
 
         args = [f"output.{o}.disable" for o in selected_outputs]
         subprocess.run(["kscreen-doctor", *args], check=True, capture_output=True)
-        subprocess.run(
-            ["notify-send", "Monitor Indicator", f"Disabled: {_pretty_names(selected_outputs)}"],
-            capture_output=True,
-        )
+        notify(f"Disabled: {_pretty_names(selected_outputs)}")
     else:
         saved = {}
         if layout_file.exists() and layout_file.stat().st_size > 0:
@@ -109,10 +102,7 @@ def toggle_outputs(selected_outputs, layout_file=LAYOUT_FILE):
         if args:
             subprocess.run(["kscreen-doctor", *args], check=True, capture_output=True)
 
-        subprocess.run(
-            ["notify-send", "Monitor Indicator", f"Enabled: {_pretty_names(selected_outputs)}"],
-            capture_output=True,
-        )
+        notify(f"Enabled: {_pretty_names(selected_outputs)}")
 
 
 def auto_disable_startup(selected_outputs, layout_file=LAYOUT_FILE):

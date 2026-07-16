@@ -74,6 +74,10 @@ MENU_INTROSPECTION_XML = """
       <arg name="data" type="v" direction="in"/>
       <arg name="timestamp" type="u" direction="in"/>
     </method>
+    <method name="EventGroup">
+      <arg name="events" type="a(isvu)" direction="in"/>
+      <arg name="idErrors" type="ai" direction="out"/>
+    </method>
     <method name="AboutToShow">
       <arg name="id" type="i" direction="in"/>
       <arg name="needUpdate" type="b" direction="out"/>

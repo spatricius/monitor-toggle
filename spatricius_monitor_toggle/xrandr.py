@@ -5,7 +5,9 @@ from pathlib import Path
 
 from .edid import read_edid_name_from_hex
 from .constants import XRANDR_LAYOUT_FILE
-from .outputs_common import output_label, output_short_label, selected_output_infos
+from .outputs_common import (
+    output_label, output_short_label, selected_output_infos, pretty_names, notify,
+)
 
 _OUTPUT_RE = re.compile(
     r"^(?P<name>\S+)\s+(?P<state>connected|disconnected)"
@@ -133,8 +135,11 @@ def _keep_args(name, info):
     scaled outputs unspecified, corrupting the whole layout. Always restating
     every active output's full geometry in the same call avoids that.
     """
-    args = ["--output", name, "--mode", info["current_mode"], "--pos", f"{info['pos_x']}x{info['pos_y']}"]
-    scale = _scale_for(info["current_mode"], info["width"], info["height"])
+    mode = info["current_mode"]
+    args = ["--output", name]
+    args += ["--mode", mode] if mode else ["--auto"]
+    args += ["--pos", f"{info['pos_x']}x{info['pos_y']}"]
+    scale = _scale_for(mode, info["width"], info["height"])
     if scale:
         args += ["--scale", f"{scale[0]:.4f}x{scale[1]:.4f}"]
     return args
@@ -142,11 +147,8 @@ def _keep_args(name, info):
 
 def _pretty_names(names):
     blobs = _edid_blobs(_query("--props"))
-    result = []
-    for name in names:
-        model_name = read_edid_name_from_hex(blobs[name]) if name in blobs else None
-        result.append(model_name or name)
-    return ", ".join(result)
+    read_name = lambda name: read_edid_name_from_hex(blobs[name]) if name in blobs else None
+    return pretty_names(read_name, names)
 
 
 def toggle_outputs(selected_outputs, layout_file=XRANDR_LAYOUT_FILE):
@@ -154,10 +156,7 @@ def toggle_outputs(selected_outputs, layout_file=XRANDR_LAYOUT_FILE):
 
     missing = [o for o in selected_outputs if o not in outputs]
     if missing:
-        subprocess.run(
-            ["notify-send", "Monitor Indicator", f"Could not find output(s): {_pretty_names(missing)}"],
-            capture_output=True,
-        )
+        notify(f"Could not find output(s): {_pretty_names(missing)}")
         return
 
     enabled_count = sum(1 for info in outputs.values() if info["enabled"])
@@ -166,10 +165,7 @@ def toggle_outputs(selected_outputs, layout_file=XRANDR_LAYOUT_FILE):
 
     if selected_enabled_count == len(selected_outputs):
         if enabled_count - selected_enabled_count < 1:
-            subprocess.run(
-                ["notify-send", "Monitor Indicator", "Refusing to disable every active screen"],
-                capture_output=True,
-            )
+            notify("Refusing to disable every active screen")
             return
 
         Path(layout_file).parent.mkdir(parents=True, exist_ok=True)
@@ -191,10 +187,7 @@ def toggle_outputs(selected_outputs, layout_file=XRANDR_LAYOUT_FILE):
             if info["enabled"] and name not in selected_outputs:
                 args += _keep_args(name, info)
         subprocess.run(["xrandr", *args], check=True, capture_output=True)
-        subprocess.run(
-            ["notify-send", "Monitor Indicator", f"Disabled: {_pretty_names(selected_outputs)}"],
-            capture_output=True,
-        )
+        notify(f"Disabled: {_pretty_names(selected_outputs)}")
     else:
         saved = {}
         if layout_file.exists() and layout_file.stat().st_size > 0:
@@ -222,10 +215,7 @@ def toggle_outputs(selected_outputs, layout_file=XRANDR_LAYOUT_FILE):
                 args += _keep_args(name, info)
         subprocess.run(["xrandr", *args], check=True, capture_output=True)
 
-        subprocess.run(
-            ["notify-send", "Monitor Indicator", f"Enabled: {_pretty_names(selected_outputs)}"],
-            capture_output=True,
-        )
+        notify(f"Enabled: {_pretty_names(selected_outputs)}")
 
 
 def auto_disable_startup(selected_outputs, layout_file=XRANDR_LAYOUT_FILE):

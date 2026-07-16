@@ -1,12 +1,13 @@
 import json
-import subprocess
 
 import gi
 gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gio, GLib
 
 from .constants import MUTTER_LAYOUT_FILE
-from .outputs_common import output_label, output_short_label, selected_output_infos
+from .outputs_common import (
+    output_label, output_short_label, selected_output_infos, pretty_names, notify,
+)
 
 _BUS_NAMES = ["org.gnome.Mutter.DisplayConfig", "org.cinnamon.Muffin.DisplayConfig"]
 
@@ -31,12 +32,17 @@ _bus_name = None
 def _get_connection():
     global _connection
     if _connection is None:
-        _connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        try:
+            _connection = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        except GLib.Error:
+            return None
     return _connection
 
 
 def _detect_bus_name():
     conn = _get_connection()
+    if conn is None:
+        return None
     for name in _BUS_NAMES:
         path = "/" + name.replace(".", "/")
         try:
@@ -107,6 +113,13 @@ def _preferred_mode(modes):
     return next((m for m in modes if m[6].get("is-preferred")), modes[0] if modes else None)
 
 
+def _mode_id_for(modes):
+    """Best-effort mode id for an output: its current mode, or failing that
+    (e.g. a momentary state gap) its preferred one. None if it has no modes."""
+    mode = _current_mode(modes) or _preferred_mode(modes)
+    return mode[0] if mode else None
+
+
 def _enabled_geometry(logical_monitors):
     """connector -> (x, y, scale, transform, primary) for every currently-enabled output."""
     geometry = {}
@@ -144,7 +157,25 @@ def get_outputs():
 
 def _pretty_names(monitors, names):
     lookup = {m[0][0]: _friendly_name(m[0][2]) for m in monitors}
-    return ", ".join(lookup.get(n) or n for n in names)
+    return pretty_names(lookup.get, names)
+
+
+def _save_layout(layout_file, saved):
+    layout_file.parent.mkdir(parents=True, exist_ok=True)
+    layout_file.write_text(json.dumps(saved))
+
+
+def _commit(serial, new_logical, message):
+    """Verify, then apply, retrying with the other method if our per-desktop
+    guess about which one avoids a blocking confirmation dialog was wrong."""
+    _apply_monitors_config(serial, _METHOD_VERIFY, new_logical)
+    method = _apply_method()
+    try:
+        _apply_monitors_config(serial, method, new_logical)
+    except GLib.Error:
+        fallback = _METHOD_TEMPORARY if method == _METHOD_PERSISTENT else _METHOD_PERSISTENT
+        _apply_monitors_config(serial, fallback, new_logical)
+    notify(message)
 
 
 def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
@@ -153,10 +184,7 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
 
     missing = [o for o in selected_outputs if o not in modes_by_name]
     if missing:
-        subprocess.run(
-            ["notify-send", "Monitor Indicator", f"Could not find output(s): {_pretty_names(monitors, missing)}"],
-            capture_output=True,
-        )
+        notify(f"Could not find output(s): {_pretty_names(monitors, missing)}")
         return
 
     geometry = _enabled_geometry(logical_monitors)
@@ -165,10 +193,7 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
 
     if len(selected_enabled) == len(selected_outputs):
         if len(enabled_names) - len(selected_enabled) < 1:
-            subprocess.run(
-                ["notify-send", "Monitor Indicator", "Refusing to disable every active screen"],
-                capture_output=True,
-            )
+            notify("Refusing to disable every active screen")
             return
 
         # Save the full pre-disable arrangement (every currently-enabled output,
@@ -184,8 +209,7 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
                 "x": x, "y": y, "scale": scale, "transform": transform, "primary": primary,
                 "mode": current[0] if current else None,
             }
-        layout_file.parent.mkdir(parents=True, exist_ok=True)
-        layout_file.write_text(json.dumps(saved))
+        _save_layout(layout_file, saved)
 
         new_logical = []
         for x, y, scale, transform, primary, mon_refs, _props in logical_monitors:
@@ -194,17 +218,12 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
                 continue
             new_logical.append({
                 "x": x, "y": y, "scale": scale, "transform": transform, "primary": primary,
-                "monitors": [(n, _current_mode(modes_by_name[n])[0], {}) for n in names],
+                "monitors": [(n, _mode_id_for(modes_by_name[n]), {}) for n in names],
             })
         _normalize_origin(new_logical)
         _ensure_primary(new_logical)
 
-        _apply_monitors_config(serial, _METHOD_VERIFY, new_logical)
-        _apply_monitors_config(serial, _apply_method(), new_logical)
-        subprocess.run(
-            ["notify-send", "Monitor Indicator", f"Disabled: {_pretty_names(monitors, selected_outputs)}"],
-            capture_output=True,
-        )
+        _commit(serial, new_logical, f"Disabled: {_pretty_names(monitors, selected_outputs)}")
     else:
         saved = {}
         if layout_file.exists() and layout_file.stat().st_size > 0:
@@ -224,7 +243,7 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
                 "scale": entry.get("scale", scale),
                 "transform": entry.get("transform", transform),
                 "primary": entry.get("primary", primary),
-                "monitors": [(n, _current_mode(modes_by_name[n])[0], {}) for n, *_ in mon_refs],
+                "monitors": [(n, _mode_id_for(modes_by_name[n]), {}) for n, *_ in mon_refs],
             })
 
         for name in selected_outputs:
@@ -247,12 +266,18 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
         _normalize_origin(new_logical)
         _ensure_primary(new_logical)
 
-        _apply_monitors_config(serial, _METHOD_VERIFY, new_logical)
-        _apply_monitors_config(serial, _apply_method(), new_logical)
-        subprocess.run(
-            ["notify-send", "Monitor Indicator", f"Enabled: {_pretty_names(monitors, selected_outputs)}"],
-            capture_output=True,
-        )
+        _commit(serial, new_logical, f"Enabled: {_pretty_names(monitors, selected_outputs)}")
+
+        # Refresh the cache with the state just applied, so a later toggle that
+        # keeps one of these outputs untouched restores from fresh data instead
+        # of a stale pre-disable snapshot that predates this enable.
+        for lm in new_logical:
+            for name, mode_id, _props in lm["monitors"]:
+                saved[name] = {
+                    "x": lm["x"], "y": lm["y"], "scale": lm["scale"], "transform": lm["transform"],
+                    "primary": lm["primary"], "mode": mode_id,
+                }
+        _save_layout(layout_file, saved)
 
 
 def _next_x(new_logical, modes_by_name):

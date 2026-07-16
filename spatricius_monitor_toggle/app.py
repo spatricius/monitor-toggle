@@ -99,7 +99,7 @@ class MonitorIndicator:
             invocation.return_value(
                 GLib.Variant(
                     "(a(ia{sv}))",
-                    ([self.menu_properties(item_id) for item_id in ids],),
+                    ([(item_id, self.menu_properties(item_id)) for item_id in ids],),
                 )
             )
         elif method_name == "GetProperty":
@@ -113,6 +113,12 @@ class MonitorIndicator:
             if event_id == "clicked":
                 self.handle_menu_click(item_id)
             invocation.return_value(None)
+        elif method_name == "EventGroup":
+            (events,) = parameters.unpack()
+            for item_id, event_id, _data, _timestamp in events:
+                if event_id == "clicked":
+                    self.handle_menu_click(item_id)
+            invocation.return_value(GLib.Variant("(ai)", ([],)))
         elif method_name == "AboutToShow":
             self.refresh_status()
             invocation.return_value(GLib.Variant("(b)", (False,)))
