@@ -16,7 +16,7 @@ from .display_backend import (
     get_outputs, selected_output_infos, selected_outputs_enabled,
     toggle_outputs, auto_disable_startup,
 )
-from .dbus_service import register_objects, register_with_watcher, own_bus_name
+from .dbus_service import register_objects, register_with_watcher, own_bus_name, watch_watcher
 
 
 class MonitorIndicator:
@@ -46,12 +46,15 @@ class MonitorIndicator:
             self.on_menu_get_property,
         )
         self.refresh_status(emit=False)
+        watch_watcher(self._register_with_watcher)
+        self.disable_on_startup()
+
+    def _register_with_watcher(self, connection):
         try:
             register_with_watcher(connection)
         except GLib.Error as e:
             import sys
             print(f"Warning: Failed to register tray icon: {e}", file=sys.stderr)
-        self.disable_on_startup()
 
     def on_item_method_call(
         self, _connection, _sender, _object_path, _interface_name,

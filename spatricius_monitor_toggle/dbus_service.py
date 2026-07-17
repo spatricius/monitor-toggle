@@ -41,6 +41,16 @@ def register_with_watcher(connection):
     )
 
 
+def watch_watcher(on_watcher_appeared):
+    """Call `on_watcher_appeared(connection)` whenever org.kde.StatusNotifierWatcher
+    is available: immediately if it's already up, or later if it starts up after
+    us (a real race during login autostart), and again if it ever restarts."""
+    return Gio.bus_watch_name(
+        Gio.BusType.SESSION, WATCHER_BUS, Gio.BusNameWatcherFlags.NONE,
+        lambda connection, _name, _owner: on_watcher_appeared(connection), None,
+    )
+
+
 def own_bus_name(on_bus_acquired):
     return Gio.bus_own_name(
         Gio.BusType.SESSION, BUS_NAME,
