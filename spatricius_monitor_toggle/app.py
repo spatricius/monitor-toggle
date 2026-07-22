@@ -68,17 +68,17 @@ class MonitorIndicator:
 
     def on_item_get_property(self, _connection, _sender, _object_path,
                               _interface_name, property_name):
+        # Omit *IconName (return None) instead of "": Cinnamon treats an empty-but-present IconName as a failed lookup and shows a broken icon instead of falling back to IconPixmap.
+        if property_name in ("IconName", "OverlayIconName", "AttentionIconName"):
+            return None
         values = {
             "Category": GLib.Variant("s", "Hardware"),
             "Id": GLib.Variant("s", "spatricius-monitor-toggle"),
             "Title": GLib.Variant("s", "Monitor Toggle"),
             "Status": GLib.Variant("s", self.status),
             "WindowId": GLib.Variant("i", 0),
-            "IconName": GLib.Variant("s", ""),
             "IconPixmap": icon_pixmap_variant(self.icon_file),
-            "OverlayIconName": GLib.Variant("s", ""),
             "OverlayIconPixmap": GLib.Variant("a(iiay)", []),
-            "AttentionIconName": GLib.Variant("s", ""),
             "AttentionIconPixmap": GLib.Variant("a(iiay)", []),
             "AttentionMovieName": GLib.Variant("s", ""),
             "ToolTip": GLib.Variant(
