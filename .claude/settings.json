@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash(xrandr --query*)",
+      "Bash(DISPLAY=:0 xrandr --query*)",
+      "Bash(journalctl *)",
+      "Bash(gdbus call --session --dest org.freedesktop.DBus --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.*)"
+    ]
+  }
+}

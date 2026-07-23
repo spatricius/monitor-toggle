@@ -1,4 +1,5 @@
 import json
+import time
 
 import gi
 gi.require_version("GdkPixbuf", "2.0")
@@ -220,6 +221,13 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
                 "x": x, "y": y, "scale": scale, "transform": transform, "primary": primary,
                 "monitors": [(n, _mode_id_for(modes_by_name[n]), {}) for n in names],
             })
+
+        # Final hard stop: never commit a layout with zero logical monitors,
+        # regardless of what the enabled-count check above concluded.
+        if not new_logical:
+            notify("Refusing to disable every active screen")
+            return
+
         _normalize_origin(new_logical)
         _ensure_primary(new_logical)
 
@@ -316,7 +324,23 @@ def _ensure_primary(new_logical):
     new_logical[0]["primary"] = True
 
 
+def _wait_for_stable_state(tries=10, interval=1.0):
+    """Poll GetCurrentState's serial until it stops changing, so startup
+    doesn't race Mutter/Muffin's own in-progress monitor-config restore."""
+    last = None
+    for _ in range(tries):
+        try:
+            serial, *_ = _get_current_state()
+        except GLib.Error:
+            serial = None
+        if serial is not None and serial == last:
+            return
+        last = serial
+        time.sleep(interval)
+
+
 def auto_disable_startup(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
+    _wait_for_stable_state()
     outputs = get_outputs()
     infos = selected_output_infos(outputs, selected_outputs)
     if any(o["enabled"] for o in infos):

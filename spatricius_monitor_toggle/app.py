@@ -47,7 +47,12 @@ class MonitorIndicator:
         )
         self.refresh_status(emit=False)
         watch_watcher(self._register_with_watcher)
+        # Delay: Muffin is still restoring its own monitor config seconds after login; racing it with our ApplyMonitorsConfig here blanked every output.
+        GLib.timeout_add_seconds(5, self._delayed_disable_on_startup)
+
+    def _delayed_disable_on_startup(self):
         self.disable_on_startup()
+        return False
 
     def _register_with_watcher(self, connection):
         try:
@@ -200,8 +205,10 @@ class MonitorIndicator:
         output = self._output_for_menu_id(item_id)
         if output:
             selected = output["name"] in self.selected_outputs
+            suffix = " ●" if output["enabled"] else " ○"
+            label = output["label"] + suffix
             return {
-                "label": GLib.Variant("s", output["label"]),
+                "label": GLib.Variant("s", label),
                 "enabled": GLib.Variant("b", True),
                 "visible": GLib.Variant("b", True),
                 "toggle-type": GLib.Variant("s", "checkmark"),

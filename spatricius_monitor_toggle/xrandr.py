@@ -180,12 +180,20 @@ def toggle_outputs(selected_outputs, layout_file=XRANDR_LAYOUT_FILE):
             for name, info in outputs.items() if info["enabled"]
         }))
 
+        surviving = [name for name, info in outputs.items()
+                     if info["enabled"] and name not in selected_outputs]
+
+        # Final hard stop: never commit a layout with zero surviving outputs,
+        # regardless of what the enabled-count check above concluded.
+        if not surviving:
+            notify("Refusing to disable every active screen")
+            return
+
         args = []
         for name in selected_outputs:
             args += ["--output", name, "--off"]
-        for name, info in outputs.items():
-            if info["enabled"] and name not in selected_outputs:
-                args += _keep_args(name, info)
+        for name in surviving:
+            args += _keep_args(name, outputs[name])
         subprocess.run(["xrandr", *args], check=True, capture_output=True)
         notify(f"Disabled: {_pretty_names(selected_outputs)}")
     else:
