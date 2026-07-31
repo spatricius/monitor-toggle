@@ -10,9 +10,13 @@ AUTOSTART_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
 
 mkdir -p "$INSTALL_DIR" "$AUTOSTART_DIR"
 
-cp spatricius_monitor_toggle/icons/monitor-on.svg "$INSTALL_DIR"/monitor-on.svg
-cp spatricius_monitor_toggle/icons/monitor-off.svg "$INSTALL_DIR"/monitor-off.svg
-cp spatricius_monitor_toggle/icons/monitor-busy.svg "$INSTALL_DIR"/monitor-busy.svg
+# Clean up old, non-namespaced icon names from installs before the icons were renamed
+# to avoid colliding with other themes' generically-named icons.
+rm -f "$INSTALL_DIR"/monitor-on.svg "$INSTALL_DIR"/monitor-off.svg "$INSTALL_DIR"/monitor-busy.svg
+
+cp spatricius_monitor_toggle/icons/spatricius-monitor-toggle-on.svg "$INSTALL_DIR"/spatricius-monitor-toggle-on.svg
+cp spatricius_monitor_toggle/icons/spatricius-monitor-toggle-off.svg "$INSTALL_DIR"/spatricius-monitor-toggle-off.svg
+cp spatricius_monitor_toggle/icons/spatricius-monitor-toggle-busy.svg "$INSTALL_DIR"/spatricius-monitor-toggle-busy.svg
 
 cp data/spatricius-monitor-toggle.desktop "$AUTOSTART_DIR/spatricius-monitor-toggle.desktop"
 sed -i "s|^Exec=spatricius-monitor-toggle$|Exec=$HOME/.local/bin/spatricius-monitor-toggle|" "$AUTOSTART_DIR/spatricius-monitor-toggle.desktop"

@@ -9,9 +9,14 @@ echo "==> Removing autostart file..."
 rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/autostart/spatricius-monitor-toggle.desktop"
 
 echo "==> Removing icons..."
-rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps/monitor-on.svg"
-rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps/monitor-off.svg"
-rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps/monitor-busy.svg"
+ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
+rm -f "$ICON_DIR"/spatricius-monitor-toggle-on.svg
+rm -f "$ICON_DIR"/spatricius-monitor-toggle-off.svg
+rm -f "$ICON_DIR"/spatricius-monitor-toggle-busy.svg
+# Old names from before the icons were namespaced:
+rm -f "$ICON_DIR"/monitor-on.svg
+rm -f "$ICON_DIR"/monitor-off.svg
+rm -f "$ICON_DIR"/monitor-busy.svg
 
 echo "==> Uninstalling Python package..."
 pip uninstall spatricius-monitor-toggle -y 2>/dev/null || true

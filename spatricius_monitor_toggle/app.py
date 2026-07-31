@@ -5,7 +5,7 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import GLib, Gio
 
 from .constants import (
-    DEFAULT_OUTPUT, ICON_ON, ICON_OFF, ICON_BUSY,
+    DEFAULT_OUTPUT, ICON_ON, ICON_OFF, ICON_BUSY, ICON_DIR, ICON_NAMES,
     MENU_TOGGLE, MENU_REFRESH, MENU_AUTO_DISABLE, MENU_QUIT,
     MENU_SEPARATOR_MONITORS, MENU_SEPARATOR_OPTIONS, MENU_SEPARATOR_QUIT,
     MENU_MONITOR_BASE, ITEM_IFACE, MENU_IFACE, OBJECT_PATH, MENU_PATH,
@@ -73,8 +73,11 @@ class MonitorIndicator:
 
     def on_item_get_property(self, _connection, _sender, _object_path,
                               _interface_name, property_name):
-        # Omit *IconName (return None) instead of "": Cinnamon treats an empty-but-present IconName as a failed lookup and shows a broken icon instead of falling back to IconPixmap.
-        if property_name in ("IconName", "OverlayIconName", "AttentionIconName"):
+        # Omit Overlay/Attention*IconName (return None) instead of "": Cinnamon treats an
+        # empty-but-present IconName as a failed lookup and shows a broken icon instead of
+        # falling back. The main IconName IS set below (to a real themed name) since watchers
+        # (e.g. xapp-sn-watcher) try that path first and their IconPixmap fallback is flaky.
+        if property_name in ("OverlayIconName", "AttentionIconName"):
             return None
         values = {
             "Category": GLib.Variant("s", "Hardware"),
@@ -82,6 +85,8 @@ class MonitorIndicator:
             "Title": GLib.Variant("s", "Monitor Toggle"),
             "Status": GLib.Variant("s", self.status),
             "WindowId": GLib.Variant("i", 0),
+            "IconName": GLib.Variant("s", ICON_NAMES[self.icon_file]),
+            "IconThemePath": GLib.Variant("as", [str(ICON_DIR)]),
             "IconPixmap": icon_pixmap_variant(self.icon_file),
             "OverlayIconPixmap": GLib.Variant("a(iiay)", []),
             "AttentionIconPixmap": GLib.Variant("a(iiay)", []),

@@ -4,9 +4,13 @@ from pathlib import Path
 
 DEFAULT_OUTPUT = "DP-1"
 ICON_DIR = Path(__file__).resolve().parent / "icons"
-ICON_ON = str(ICON_DIR / "monitor-on.svg")
-ICON_OFF = str(ICON_DIR / "monitor-off.svg")
-ICON_BUSY = str(ICON_DIR / "monitor-busy.svg")
+ICON_ON = str(ICON_DIR / "spatricius-monitor-toggle-on.svg")
+ICON_OFF = str(ICON_DIR / "spatricius-monitor-toggle-off.svg")
+ICON_BUSY = str(ICON_DIR / "spatricius-monitor-toggle-busy.svg")
+ICON_NAME_ON = "spatricius-monitor-toggle-on"
+ICON_NAME_OFF = "spatricius-monitor-toggle-off"
+ICON_NAME_BUSY = "spatricius-monitor-toggle-busy"
+ICON_NAMES = {ICON_ON: ICON_NAME_ON, ICON_OFF: ICON_NAME_OFF, ICON_BUSY: ICON_NAME_BUSY}
 RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", Path.home() / ".local/state")) / "spatricius-monitor-toggle"
 LOCK_FILE = RUNTIME_DIR / "lock"
 STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "spatricius-monitor-toggle"
