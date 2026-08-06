@@ -197,10 +197,7 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
             notify("Refusing to disable every active screen")
             return
 
-        # Save the full pre-disable arrangement (every currently-enabled output,
-        # not just the ones being disabled): once an output is removed, Mutter
-        # may reposition the remaining ones, so restoring later needs the whole
-        # mutually-consistent snapshot rather than a single output's old spot.
+        # Snapshot every currently-enabled output, not just the ones being disabled, since the whole arrangement shifts together.
         saved = {}
         if layout_file.exists() and layout_file.stat().st_size > 0:
             saved = json.loads(layout_file.read_text())
@@ -222,12 +219,12 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
                 "monitors": [(n, _mode_id_for(modes_by_name[n]), {}) for n in names],
             })
 
-        # Final hard stop: never commit a layout with zero logical monitors,
-        # regardless of what the enabled-count check above concluded.
+        # Final hard stop: never commit a layout with zero logical monitors.
         if not new_logical:
             notify("Refusing to disable every active screen")
             return
 
+        _close_gaps(new_logical, {n: geometry[n] for n in selected_outputs}, modes_by_name)
         _normalize_origin(new_logical)
         _ensure_primary(new_logical)
 
@@ -237,20 +234,13 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
         if layout_file.exists() and layout_file.stat().st_size > 0:
             saved = json.loads(layout_file.read_text())
 
-        # Prefer the saved pre-disable snapshot for already-enabled outputs too:
-        # Mutter may have repositioned them when the other output was removed,
-        # so re-applying their old spot restores the whole previous layout
-        # instead of layering a new position onto an already-shifted one.
-        new_logical = []
+        # Scale/mode stay live (always accurate); x is ordered by saved x (a consistent single frame, refreshed every toggle) then freshly packed edge-to-edge, so order survives a disable/enable cycle without ever leaving a gap.
+        entries = []
         for x, y, scale, transform, primary, mon_refs, _props in logical_monitors:
             name = mon_refs[0][0]
-            entry = saved.get(name, {})
-            new_logical.append({
-                "x": entry.get("x", x),
-                "y": entry.get("y", y),
-                "scale": entry.get("scale", scale),
-                "transform": entry.get("transform", transform),
-                "primary": entry.get("primary", primary),
+            entries.append({
+                "sort_key": saved.get(name, {}).get("x", x),
+                "y": y, "scale": scale, "transform": transform, "primary": primary,
                 "monitors": [(n, _mode_id_for(modes_by_name[n]), {}) for n, *_ in mon_refs],
             })
 
@@ -262,23 +252,30 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
             if not mode_id:
                 preferred = _preferred_mode(modes_by_name[name])
                 mode_id = preferred[0] if preferred else None
-            x = entry.get("x", _next_x(new_logical, modes_by_name))
-            y = entry.get("y", 0)
-            scale = entry.get("scale", 1)
-            transform = entry.get("transform", 0)
-            primary = entry.get("primary", False)
-            new_logical.append({
-                "x": x, "y": y, "scale": scale, "transform": transform, "primary": primary,
+            entries.append({
+                "sort_key": entry.get("x", float("inf")),
+                "y": 0,
+                "scale": entry.get("scale", 1),
+                "transform": entry.get("transform", 0),
+                "primary": entry.get("primary", False),
                 "monitors": [(name, mode_id, {})],
             })
+
+        entries.sort(key=lambda e: e["sort_key"])
+        new_logical = []
+        edge = 0
+        for e in entries:
+            lm = {k: v for k, v in e.items() if k != "sort_key"}
+            lm["x"] = edge
+            new_logical.append(lm)
+            edge += round(_logical_size(lm, modes_by_name)[0])
+
         _normalize_origin(new_logical)
         _ensure_primary(new_logical)
 
         _commit(serial, new_logical, f"Enabled: {_pretty_names(monitors, selected_outputs)}")
 
-        # Refresh the cache with the state just applied, so a later toggle that
-        # keeps one of these outputs untouched restores from fresh data instead
-        # of a stale pre-disable snapshot that predates this enable.
+        # Refresh the cache with the state just applied, so it stays a fresh, consistent frame for the next toggle.
         for lm in new_logical:
             for name, mode_id, _props in lm["monitors"]:
                 saved[name] = {
@@ -288,17 +285,40 @@ def toggle_outputs(selected_outputs, layout_file=MUTTER_LAYOUT_FILE):
         _save_layout(layout_file, saved)
 
 
-def _next_x(new_logical, modes_by_name):
-    if not new_logical:
-        return 0
-    rightmost = 0
+def _logical_size(lm, modes_by_name):
+    name, mode_id, _props = lm["monitors"][0]
+    mode = next((m for m in modes_by_name[name] if m[0] == mode_id), None)
+    if not mode:
+        return 0, 0
+    return mode[1] / lm["scale"], mode[2] / lm["scale"]
+
+
+def _ranges_overlap(a0, a_len, b0, b_len):
+    return a0 < b0 + b_len and b0 < a0 + a_len
+
+
+def _close_gaps(new_logical, removed_geometry, modes_by_name):
+    """Pull monitors that were right-of/below a removed one back to close the hole, since Mutter rejects gaps as "not adjacent"."""
+    removed = []
+    for name, (rx, ry, rscale, _transform, _primary) in removed_geometry.items():
+        modes = modes_by_name.get(name)
+        current = modes and _current_mode(modes)
+        if not current:
+            continue
+        removed.append((rx, ry, round(current[1] / rscale), round(current[2] / rscale)))
+
     for lm in new_logical:
-        name = lm["monitors"][0][0]
-        mode_id = lm["monitors"][0][1]
-        mode = next((m for m in modes_by_name[name] if m[0] == mode_id), None)
-        width = (mode[1] / lm["scale"]) if mode else 0
-        rightmost = max(rightmost, lm["x"] + width)
-    return round(rightmost)
+        w, h = _logical_size(lm, modes_by_name)
+        dx = sum(
+            rw for rx, ry, rw, rh in removed
+            if rx + rw <= lm["x"] and _ranges_overlap(lm["y"], h, ry, rh)
+        )
+        dy = sum(
+            rh for rx, ry, rw, rh in removed
+            if ry + rh <= lm["y"] and _ranges_overlap(lm["x"], w, rx, rw)
+        )
+        lm["x"] -= dx
+        lm["y"] -= dy
 
 
 def _normalize_origin(new_logical):
