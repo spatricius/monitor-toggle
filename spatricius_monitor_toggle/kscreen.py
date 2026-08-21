@@ -9,6 +9,10 @@ from .outputs_common import (
 )
 
 
+def subscribe_changes(callback):
+    return None
+
+
 def get_outputs():
     result = subprocess.run(["kscreen-doctor", "-j"], check=True, capture_output=True, text=True)
     data = json.loads(result.stdout)

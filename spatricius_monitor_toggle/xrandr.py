@@ -93,6 +93,10 @@ def _model_names(names):
     return {name: read_edid_name_from_hex(blobs[name]) for name in names if name in blobs}
 
 
+def subscribe_changes(callback):
+    return None
+
+
 def get_outputs():
     raw = _query_outputs()
     model_names = _model_names(raw.keys())

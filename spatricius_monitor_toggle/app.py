@@ -14,7 +14,7 @@ from .config import load_config, save_config, load_selected_outputs, save_select
 from .icon import icon_pixmap_variant
 from .display_backend import (
     get_outputs, selected_output_infos, selected_outputs_enabled,
-    toggle_outputs, auto_disable_startup,
+    toggle_outputs, auto_disable_startup, subscribe_changes,
 )
 from .dbus_service import register_objects, register_with_watcher, own_bus_name, watch_watcher
 
@@ -47,8 +47,13 @@ class MonitorIndicator:
         )
         self.refresh_status(emit=False)
         watch_watcher(self._register_with_watcher)
+        subscribe_changes(self._on_display_changed)
         # Delay: Muffin is still restoring its own monitor config seconds after login; racing it with our ApplyMonitorsConfig here blanked every output.
         GLib.timeout_add_seconds(5, self._delayed_disable_on_startup)
+
+    def _on_display_changed(self):
+        if not self.busy:
+            self.refresh_status()
 
     def _delayed_disable_on_startup(self):
         self.disable_on_startup()

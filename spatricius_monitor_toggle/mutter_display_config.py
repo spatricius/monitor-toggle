@@ -64,6 +64,18 @@ def available():
     return bool(_bus_name)
 
 
+def subscribe_changes(callback):
+    """Call `callback()` whenever Mutter/Muffin emits MonitorsChanged (hotplug, external config change), so the tray stays live without waiting for the menu to be reopened."""
+    if not available():
+        return None
+    conn = _get_connection()
+    path = "/" + _bus_name.replace(".", "/")
+    return conn.signal_subscribe(
+        _bus_name, _bus_name, "MonitorsChanged", path, None,
+        Gio.DBusSignalFlags.NONE, lambda *_args: callback(),
+    )
+
+
 def _apply_method():
     available()
     return _SILENT_APPLY_METHOD.get(_bus_name, _METHOD_PERSISTENT)

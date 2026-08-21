@@ -47,6 +47,11 @@ def get_outputs():
     return _call("get_outputs")
 
 
+def subscribe_changes(callback):
+    """Ask the active backend to notify `callback()` on external monitor changes (hotplug etc). No-op for backends that can't (kscreen, xrandr)."""
+    return _backend.subscribe_changes(callback)
+
+
 def toggle_outputs(selected_outputs):
     return _call("toggle_outputs", selected_outputs)
 
