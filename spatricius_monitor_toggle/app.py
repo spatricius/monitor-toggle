@@ -5,7 +5,7 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import GLib, Gio
 
 from .constants import (
-    DEFAULT_OUTPUT, ICON_ON, ICON_OFF, ICON_BUSY, ICON_DIR, ICON_NAMES,
+    ICON_ON, ICON_OFF, ICON_BUSY, ICON_DIR, ICON_NAMES,
     MENU_TOGGLE, MENU_REFRESH, MENU_AUTO_DISABLE, MENU_QUIT,
     MENU_SEPARATOR_MONITORS, MENU_SEPARATOR_OPTIONS, MENU_SEPARATOR_QUIT,
     MENU_MONITOR_BASE, ITEM_IFACE, MENU_IFACE, OBJECT_PATH, MENU_PATH,
@@ -252,14 +252,7 @@ class MonitorIndicator:
         return None
 
     def _resolve_initial_selected_outputs(self):
-        initial = load_selected_outputs()
-        try:
-            current = get_outputs()
-            valid = {o["name"] for o in current}
-            resolved = [o for o in initial if o in valid]
-            return resolved or sorted(valid)[:1] or initial
-        except Exception:
-            return initial
+        return load_selected_outputs()
 
     def toggle_output_selection(self, output_name):
         if output_name in self.selected_outputs:
@@ -307,14 +300,6 @@ class MonitorIndicator:
     def refresh_status(self, emit=True):
         try:
             self.outputs = get_outputs()
-            valid = {o["name"] for o in self.outputs}
-            self.selected_outputs = [o for o in self.selected_outputs if o in valid]
-            if not self.selected_outputs:
-                self.selected_outputs = (
-                    [DEFAULT_OUTPUT] if DEFAULT_OUTPUT in valid
-                    else sorted(valid)[:1]
-                )
-            save_selected_outputs(self.selected_outputs)
             self.enabled = selected_outputs_enabled(self.outputs, self.selected_outputs)
             self.set_status(self.enabled)
             return
