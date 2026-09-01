@@ -78,12 +78,11 @@ class MonitorIndicator:
 
     def on_item_get_property(self, _connection, _sender, _object_path,
                               _interface_name, property_name):
-        # Omit Overlay/Attention*IconName (return None) instead of "": Cinnamon treats an
-        # empty-but-present IconName as a failed lookup and shows a broken icon instead of
-        # falling back. The main IconName IS set below (to a real themed name) since watchers
-        # (e.g. xapp-sn-watcher) try that path first and their IconPixmap fallback is flaky.
+        # "" not None: a missing property makes GDBus reply with a property-get error, and
+        # xapp-sn-watcher's g_variant_get_string on that error reply crashes its assertion,
+        # leaving the icon stuck blank. Only the main IconName needs to stay a real themed name.
         if property_name in ("OverlayIconName", "AttentionIconName"):
-            return None
+            return GLib.Variant("s", "")
         values = {
             "Category": GLib.Variant("s", "Hardware"),
             "Id": GLib.Variant("s", "spatricius-monitor-toggle"),
