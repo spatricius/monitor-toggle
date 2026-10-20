@@ -32,6 +32,7 @@ class MonitorIndicator:
         self.auto_disable = load_config()
         self.connection = None
         self.menu_revision = 1
+        self.refreshing = False
 
     def start(self):
         own_bus_name(self.on_bus_acquired)
@@ -45,15 +46,15 @@ class MonitorIndicator:
             self.on_menu_method_call,
             self.on_menu_get_property,
         )
-        self.refresh_status(emit=False)
         watch_watcher(self._register_with_watcher)
         subscribe_changes(self._on_display_changed)
+        self.refresh_status_async()
         # Delay: Muffin is still restoring its own monitor config seconds after login; racing it with our ApplyMonitorsConfig here blanked every output.
         GLib.timeout_add_seconds(5, self._delayed_disable_on_startup)
 
     def _on_display_changed(self):
         if not self.busy:
-            self.refresh_status()
+            self.refresh_status_async()
 
     def _delayed_disable_on_startup(self):
         self.disable_on_startup()
@@ -307,6 +308,33 @@ class MonitorIndicator:
             self.icon_file = ICON_BUSY
         if emit:
             self.emit_changes()
+
+    def refresh_status_async(self):
+        # Off the main loop: a blocking display query here stalls the tray watcher's one-shot property read, which sticks the icon on a broken-image placeholder.
+        if self.refreshing:
+            return
+        self.refreshing = True
+        threading.Thread(target=self._query_status, daemon=True).start()
+
+    def _query_status(self):
+        try:
+            outputs = get_outputs()
+            enabled = selected_outputs_enabled(outputs, self.selected_outputs)
+            result = (outputs, enabled, None)
+        except Exception as error:
+            result = (None, None, error)
+        GLib.idle_add(self._apply_status, *result)
+
+    def _apply_status(self, outputs, enabled, error):
+        self.refreshing = False
+        if error is None:
+            self.outputs = outputs
+            self.set_status(enabled)
+        else:
+            self.tooltip = f"Status unavailable ({error})"
+            self.icon_file = ICON_BUSY
+            self.emit_changes()
+        return False
 
     def emit_changes(self):
         if not self.connection:

@@ -1,7 +1,9 @@
+import threading
 import unittest
 from unittest.mock import patch
 
 from spatricius_monitor_toggle.app import MonitorIndicator
+from spatricius_monitor_toggle.constants import ICON_BUSY, ICON_OFF
 
 
 def make_output(name, enabled=True):
@@ -104,7 +106,7 @@ class StartupDelayTests(unittest.TestCase):
         with patch("spatricius_monitor_toggle.app.register_objects"), \
              patch("spatricius_monitor_toggle.app.watch_watcher"), \
              patch("spatricius_monitor_toggle.app.subscribe_changes"), \
-             patch("spatricius_monitor_toggle.app.get_outputs", return_value=[]), \
+             patch.object(MonitorIndicator, "refresh_status_async"), \
              patch.object(MonitorIndicator, "disable_on_startup") as disable_on_startup, \
              patch("spatricius_monitor_toggle.app.GLib.timeout_add_seconds") as timeout_add:
             indicator.on_bus_acquired(connection=object(), _name="test")
@@ -114,6 +116,70 @@ class StartupDelayTests(unittest.TestCase):
         delay_seconds, callback = timeout_add.call_args[0][:2]
         self.assertEqual(delay_seconds, 5)
         self.assertEqual(callback, indicator._delayed_disable_on_startup)
+
+
+class StartupRefreshTests(unittest.TestCase):
+    """The tray watcher reads our properties once, right after registration, and never
+    retries. A display query holding the main loop at that moment leaves IconName empty,
+    which Cinnamon renders as the broken-image placeholder for the whole session - so
+    startup must not query the backend on the main thread."""
+
+    def test_startup_queries_the_backend_off_the_main_thread(self):
+        indicator = make_indicator(["DP-1"])
+        queried_from = []
+        done = threading.Event()
+
+        def fake_get_outputs():
+            queried_from.append(threading.current_thread())
+            done.set()
+            return [make_output("DP-1", enabled=False)]
+
+        with patch("spatricius_monitor_toggle.app.register_objects"), \
+             patch("spatricius_monitor_toggle.app.watch_watcher"), \
+             patch("spatricius_monitor_toggle.app.subscribe_changes"), \
+             patch("spatricius_monitor_toggle.app.get_outputs", side_effect=fake_get_outputs), \
+             patch("spatricius_monitor_toggle.app.GLib.timeout_add_seconds"):
+            indicator.on_bus_acquired(connection=object(), _name="test")
+            self.assertTrue(done.wait(5))
+
+        self.assertIsNot(queried_from[0], threading.current_thread())
+
+    def test_refresh_status_async_queries_off_the_main_thread(self):
+        indicator = make_indicator(["DP-1"])
+        queried_from = []
+        done = threading.Event()
+
+        def fake_get_outputs():
+            queried_from.append(threading.current_thread())
+            done.set()
+            return [make_output("DP-1", enabled=False)]
+
+        with patch("spatricius_monitor_toggle.app.get_outputs", side_effect=fake_get_outputs), \
+             patch("spatricius_monitor_toggle.app.GLib.idle_add"):
+            indicator.refresh_status_async()
+            self.assertTrue(done.wait(5))
+            indicator.refresh_status_async()
+
+        self.assertIsNot(queried_from[0], threading.current_thread())
+        self.assertEqual(len(queried_from), 1)
+
+    def test_apply_status_uses_the_query_result(self):
+        indicator = make_indicator(["DP-1"])
+        indicator.refreshing = True
+
+        indicator._apply_status([make_output("DP-1", enabled=False)], False, None)
+
+        self.assertFalse(indicator.refreshing)
+        self.assertEqual(indicator.icon_file, ICON_OFF)
+
+    def test_apply_status_marks_status_unavailable_on_error(self):
+        indicator = make_indicator(["DP-1"])
+        indicator.refreshing = True
+
+        indicator._apply_status(None, None, RuntimeError("no backend"))
+
+        self.assertFalse(indicator.refreshing)
+        self.assertEqual(indicator.icon_file, ICON_BUSY)
 
 
 class DisableOnStartupTests(unittest.TestCase):
