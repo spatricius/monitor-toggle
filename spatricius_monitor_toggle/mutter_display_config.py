@@ -29,6 +29,10 @@ _SILENT_APPLY_METHOD = {
 _connection = None
 _bus_name = None
 
+# Same reasoning as the other backends: block forever and the tray watcher gives
+# up on our properties (5s timeout) without retrying.
+_CALL_TIMEOUT_MS = 10_000
+
 
 def _get_connection():
     global _connection
@@ -87,7 +91,7 @@ def _call(method_name, args_variant):
     path = "/" + _bus_name.replace(".", "/")
     return _get_connection().call_sync(
         _bus_name, path, _bus_name, method_name, args_variant,
-        None, Gio.DBusCallFlags.NONE, -1, None,
+        None, Gio.DBusCallFlags.NONE, _CALL_TIMEOUT_MS, None,
     )
 
 

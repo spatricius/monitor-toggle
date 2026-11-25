@@ -8,13 +8,21 @@ from .outputs_common import (
     output_label, output_short_label, selected_output_infos, pretty_names, notify,
 )
 
+# kscreen-doctor has been known to hang while the compositor is busy; a stuck
+# call must not leave a monitor query (or a toggle) blocking forever.
+QUERY_TIMEOUT = 5
+APPLY_TIMEOUT = 10
+
 
 def subscribe_changes(callback):
     return None
 
 
 def get_outputs():
-    result = subprocess.run(["kscreen-doctor", "-j"], check=True, capture_output=True, text=True)
+    result = subprocess.run(
+        ["kscreen-doctor", "-j"], check=True, capture_output=True, text=True,
+        timeout=QUERY_TIMEOUT,
+    )
     data = json.loads(result.stdout)
     outputs = []
     for output in data.get("outputs", []):
@@ -39,7 +47,8 @@ def _pretty_names(names):
 
 def toggle_outputs(selected_outputs, layout_file=LAYOUT_FILE):
     layout = subprocess.run(
-        ["kscreen-doctor", "-j"], check=True, capture_output=True, text=True
+        ["kscreen-doctor", "-j"], check=True, capture_output=True, text=True,
+        timeout=QUERY_TIMEOUT,
     ).stdout
     layout_data = json.loads(layout)
     all_outputs = {o["name"]: o for o in layout_data["outputs"]}
@@ -62,7 +71,10 @@ def toggle_outputs(selected_outputs, layout_file=LAYOUT_FILE):
         Path(layout_file).write_text(layout)
 
         args = [f"output.{o}.disable" for o in selected_outputs]
-        subprocess.run(["kscreen-doctor", *args], check=True, capture_output=True)
+        subprocess.run(
+            ["kscreen-doctor", *args], check=True, capture_output=True,
+            timeout=APPLY_TIMEOUT,
+        )
         notify(f"Disabled: {_pretty_names(selected_outputs)}")
     else:
         saved = {}
@@ -104,7 +116,10 @@ def toggle_outputs(selected_outputs, layout_file=LAYOUT_FILE):
                 args.append(f"output.{name}.position.{pos.get('x', 0)},{pos.get('y', 0)}")
 
         if args:
-            subprocess.run(["kscreen-doctor", *args], check=True, capture_output=True)
+            subprocess.run(
+                ["kscreen-doctor", *args], check=True, capture_output=True,
+                timeout=APPLY_TIMEOUT,
+            )
 
         notify(f"Enabled: {_pretty_names(selected_outputs)}")
 

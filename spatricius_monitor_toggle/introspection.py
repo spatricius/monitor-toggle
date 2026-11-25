@@ -7,7 +7,7 @@ INTROSPECTION_XML = """
     <property name="Status" type="s" access="read"/>
     <property name="WindowId" type="i" access="read"/>
     <property name="IconName" type="s" access="read"/>
-    <property name="IconThemePath" type="as" access="read"/>
+    <property name="IconThemePath" type="s" access="read"/>
     <property name="IconPixmap" type="a(iiay)" access="read"/>
     <property name="OverlayIconName" type="s" access="read"/>
     <property name="OverlayIconPixmap" type="a(iiay)" access="read"/>

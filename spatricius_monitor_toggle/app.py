@@ -19,6 +19,13 @@ from .display_backend import (
 from .dbus_service import register_objects, register_with_watcher, own_bus_name, watch_watcher
 
 
+# Delays (ms) after registration at which we force a real icon-name change. The
+# first one lands right after the tray host finished creating its proxies; the
+# second covers a slow login where that took longer.
+ICON_PULSE_DELAYS_MS = (1500, 6000)
+ICON_PULSE_DURATION_MS = 250
+
+
 class MonitorIndicator:
     def __init__(self, loop=None):
         self.loop = loop
@@ -26,13 +33,14 @@ class MonitorIndicator:
         self.enabled = False
         self.status = "Active"
         self.tooltip = "Starting..."
-        self.icon_file = ICON_OFF
+        self.icon_file = ICON_BUSY
         self.outputs = []
         self.selected_outputs = self._resolve_initial_selected_outputs()
         self.auto_disable = load_config()
         self.connection = None
         self.menu_revision = 1
         self.refreshing = False
+        self._pixmap_cache = None
 
     def start(self):
         own_bus_name(self.on_bus_acquired)
@@ -66,6 +74,38 @@ class MonitorIndicator:
         except GLib.Error as e:
             import sys
             print(f"Warning: Failed to register tray icon: {e}", file=sys.stderr)
+            return
+        self._schedule_icon_pulses()
+
+    def _schedule_icon_pulses(self):
+        """Refresh the tray icon's properties once the host is actually listening.
+
+        xapp-sn-watcher exports a placeholder XAppStatusIcon (libxapp initialises
+        the icon name to a single space) and only fills in the real values after
+        a round trip back to us. Cinnamon's StatusNotifier proxy is created in
+        that window and its properties end up holding the placeholder; libxapp
+        only emits PropertiesChanged when a value actually changes, so nothing
+        ever corrects it and St draws "image-missing" (white page, grey warning
+        triangle) for the rest of the session. One real transition after
+        registration is what unsticks it.
+        """
+        for delay_ms in ICON_PULSE_DELAYS_MS:
+            GLib.timeout_add(delay_ms, self._pulse_icon)
+
+    def _pulse_icon(self):
+        if self.busy or not self.connection:
+            return False
+        self.set_status(state="busy")
+        GLib.timeout_add(ICON_PULSE_DURATION_MS, self._end_icon_pulse)
+        return False
+
+    def _end_icon_pulse(self):
+        # Re-query instead of restoring a snapshot: if a real status change landed
+        # during the pulse it must win, and a failed query legitimately ends up in
+        # the "unavailable" state.
+        if not self.busy:
+            self.refresh_status_async()
+        return False
 
     def on_item_method_call(
         self, _connection, _sender, _object_path, _interface_name,
@@ -74,7 +114,7 @@ class MonitorIndicator:
         if method_name in {"Activate", "SecondaryActivate"}:
             self.run_in_background(self.toggle_selected_outputs)
         elif method_name == "ContextMenu":
-            self.refresh_status()
+            self.refresh_status_async()
         invocation.return_value(None)
 
     def on_item_get_property(self, _connection, _sender, _object_path,
@@ -84,25 +124,36 @@ class MonitorIndicator:
         # leaving the icon stuck blank. Only the main IconName needs to stay a real themed name.
         if property_name in ("OverlayIconName", "AttentionIconName"):
             return GLib.Variant("s", "")
+        # Built lazily: rendering the SVG into IconPixmap costs ~25ms, and the host
+        # reads every property through GetAll - building the whole dict per call made
+        # one GetAll take ~380ms of main-loop time (and risks the watcher's 5s timeout).
         values = {
-            "Category": GLib.Variant("s", "Hardware"),
-            "Id": GLib.Variant("s", "spatricius-monitor-toggle"),
-            "Title": GLib.Variant("s", "Monitor Toggle"),
-            "Status": GLib.Variant("s", self.status),
-            "WindowId": GLib.Variant("i", 0),
-            "IconName": GLib.Variant("s", ICON_NAMES[self.icon_file]),
-            "IconThemePath": GLib.Variant("as", [str(ICON_DIR)]),
-            "IconPixmap": icon_pixmap_variant(self.icon_file),
-            "OverlayIconPixmap": GLib.Variant("a(iiay)", []),
-            "AttentionIconPixmap": GLib.Variant("a(iiay)", []),
-            "AttentionMovieName": GLib.Variant("s", ""),
-            "ToolTip": GLib.Variant(
+            "Category": lambda: GLib.Variant("s", "Hardware"),
+            "Id": lambda: GLib.Variant("s", "spatricius-monitor-toggle"),
+            "Title": lambda: GLib.Variant("s", "Monitor Toggle"),
+            "Status": lambda: GLib.Variant("s", self.status),
+            "WindowId": lambda: GLib.Variant("i", 0),
+            "IconName": lambda: GLib.Variant("s", ICON_NAMES[self.icon_file]),
+            "IconThemePath": lambda: GLib.Variant("s", str(ICON_DIR)),
+            "IconPixmap": self._icon_pixmap_variant,
+            "OverlayIconPixmap": lambda: GLib.Variant("a(iiay)", []),
+            "AttentionIconPixmap": lambda: GLib.Variant("a(iiay)", []),
+            "AttentionMovieName": lambda: GLib.Variant("s", ""),
+            "ToolTip": lambda: GLib.Variant(
                 "(sa(iiay)ss)", ("", [], "Monitor Indicator", self.tooltip)
             ),
-            "ItemIsMenu": GLib.Variant("b", False),
-            "Menu": GLib.Variant("o", MENU_PATH),
+            "ItemIsMenu": lambda: GLib.Variant("b", False),
+            "Menu": lambda: GLib.Variant("o", MENU_PATH),
         }
-        return values.get(property_name, GLib.Variant("s", ""))
+        getter = values.get(property_name)
+        if getter is None:
+            return GLib.Variant("s", "")
+        return getter()
+
+    def _icon_pixmap_variant(self):
+        if self._pixmap_cache is None or self._pixmap_cache[0] != self.icon_file:
+            self._pixmap_cache = (self.icon_file, icon_pixmap_variant(self.icon_file))
+        return self._pixmap_cache[1]
 
     def on_menu_method_call(
         self, _connection, _sender, _object_path, _interface_name,
@@ -138,7 +189,7 @@ class MonitorIndicator:
                     self.handle_menu_click(item_id)
             invocation.return_value(GLib.Variant("(ai)", ([],)))
         elif method_name == "AboutToShow":
-            self.refresh_status()
+            self.refresh_status_async()
             invocation.return_value(GLib.Variant("(b)", (False,)))
         elif method_name == "AboutToShowGroup":
             invocation.return_value(GLib.Variant("(aiai)", ([], [])))
@@ -232,9 +283,9 @@ class MonitorIndicator:
         elif item_id == MENU_AUTO_DISABLE:
             self.auto_disable = not self.auto_disable
             save_config(self.auto_disable)
-            self.refresh_status()
+            self.refresh_status_async()
         elif item_id == MENU_REFRESH:
-            self.refresh_status()
+            self.refresh_status_async()
         elif item_id == MENU_QUIT:
             if self.loop:
                 GLib.idle_add(self.loop.quit)
@@ -262,7 +313,7 @@ class MonitorIndicator:
         else:
             self.selected_outputs.append(output_name)
         save_selected_outputs(self.selected_outputs)
-        self.refresh_status()
+        self.refresh_status_async()
 
     def toggle_selected_outputs(self):
         toggle_outputs(self.selected_outputs)
@@ -298,6 +349,13 @@ class MonitorIndicator:
         self.emit_changes()
 
     def refresh_status(self, emit=True):
+        """Synchronous status query - tests only.
+
+        Never call this from a D-Bus handler or a menu callback: it runs the
+        backend on the main loop, and if that blocks the tray watcher's Get/GetAll
+        times out (5s) and the host keeps the placeholder icon name forever.
+        Production paths use refresh_status_async().
+        """
         try:
             self.outputs = get_outputs()
             self.enabled = selected_outputs_enabled(self.outputs, self.selected_outputs)
@@ -377,7 +435,7 @@ class MonitorIndicator:
             self.icon_file = ICON_BUSY
             self.emit_changes()
         else:
-            self.refresh_status()
+            self.refresh_status_async()
         return False
 
     def disable_on_startup(self):

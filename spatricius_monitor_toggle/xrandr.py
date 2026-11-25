@@ -15,13 +15,18 @@ _OUTPUT_RE = re.compile(
     r"(?:\s+(?P<w>\d+)x(?P<h>\d+)\+(?P<x>-?\d+)\+(?P<y>-?\d+))?"
     r"\s+\("
 )
+# A hung xrandr call must never wedge a refresh forever: the tray watcher gives
+# up on our properties after 5s and then never retries.
+QUERY_TIMEOUT = 5
 _MODE_RE = re.compile(r"^\s{2,}(?P<mode>\d+x\d+)[\d.\s*+]*$")
 _EDID_START_RE = re.compile(r"^\tEDID:\s*$")
 _EDID_LINE_RE = re.compile(r"^\t\t([0-9a-fA-F]+)\s*$")
 
 
 def _query(*args):
-    result = subprocess.run(["xrandr", *args], check=True, capture_output=True, text=True)
+    result = subprocess.run(
+        ["xrandr", *args], check=True, capture_output=True, text=True, timeout=QUERY_TIMEOUT,
+    )
     return result.stdout
 
 

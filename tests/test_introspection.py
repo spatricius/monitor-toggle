@@ -26,6 +26,14 @@ class IntrospectionXmlTests(unittest.TestCase):
         names = {p.name for p in node_info.interfaces[0].properties}
         self.assertTrue({"IconName", "IconPixmap", "ToolTip", "Menu"} <= names)
 
+    def test_icon_theme_path_uses_the_spec_type(self):
+        # org.kde.StatusNotifierItem.IconThemePath is a *string*, not an array.
+        # Declaring "as" made xapp-sn-watcher's g_variant_get_string() raise a
+        # GLib-CRITICAL and throw the path away entirely.
+        node_info = Gio.DBusNodeInfo.new_for_xml(INTROSPECTION_XML)
+        props = {p.name: p.signature for p in node_info.interfaces[0].properties}
+        self.assertEqual(props["IconThemePath"], "s")
+
     def test_menu_introspection_declares_methods_app_relies_on(self):
         node_info = Gio.DBusNodeInfo.new_for_xml(MENU_INTROSPECTION_XML)
         names = {m.name for m in node_info.interfaces[0].methods}
